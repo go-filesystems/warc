@@ -1,3 +1,5 @@
+<p align="center"><img src="https://raw.githubusercontent.com/go-filesystems/brand/main/social/go-filesystems-warc.png" alt="go-filesystems/warc" width="720"></p>
+
 # warc
 
 A pure-Go reader and writer for **WARC** (ISO 28500), the format a web crawl is
