@@ -76,7 +76,13 @@ type FS struct {
 // Blocks are not read. Open costs one pass over the header blocks plus a seek
 // per record; ReadFile and OpenFile read a block when asked.
 func Open(r io.ReaderAt, size int64) (*FS, error) {
-	rd := newReader(io.NewSectionReader(r, 0, size))
+	sec := io.NewSectionReader(r, 0, size)
+	rd := newReader(sec)
+	// ⛔ Blocks are stepped over by a seek, not read. Next used to buffer every
+	// block it returned, so Open of a file with one 4 GiB response record
+	// allocated 4 GiB to keep an offset -- while this very comment said "Blocks
+	// are not read".
+	rd.sec = sec
 	f := &FS{r: r, byName: make(map[string]int)}
 	for i := 0; ; i++ {
 		rec, err := rd.Next()
@@ -270,6 +276,14 @@ func (f *FS) ReadFile(p string) ([]byte, error) {
 // and a caller of ReadFile expects the whole block or a failure; for a
 // zero-length block ReadFull returns (0, nil) without touching the reader.
 func (f *FS) readBlock(e *entry) ([]byte, error) {
+	// The length was checked against the file by Open, so this allocation never
+	// exceeds the file -- but a file can hold a block bigger than memory, and on a
+	// 32-bit target make([]byte, n) panics for n over 2 GiB. OpenFile reads
+	// nothing until asked and has no such limit.
+	if e.blockLen > DefaultMaxBlockSize {
+		return nil, fmt.Errorf("warc: %s: the block is %d bytes, over the %d ceiling (use OpenFile): %w",
+			e.name, e.blockLen, DefaultMaxBlockSize, ErrTooLarge)
+	}
 	buf := make([]byte, e.blockLen)
 	sr := io.NewSectionReader(f.r, e.blockOff, e.blockLen)
 	if _, err := io.ReadFull(sr, buf); err != nil {

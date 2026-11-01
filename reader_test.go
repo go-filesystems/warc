@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -479,6 +480,13 @@ func TestBlockIsNotAllocatedFromContentLength(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewReader: %v", err)
 	}
+	// Over the ceiling the claim is refused before a byte of the block is read;
+	// at the ceiling it is accepted and the short stream is a truncated file.
+	if _, err := r.Next(); !errors.Is(err, ErrTooLarge) {
+		t.Fatalf("Next = %v, want ErrTooLarge", err)
+	}
+	in = strings.Replace(in, "9000000000000000000", strconv.Itoa(DefaultMaxBlockSize), 1)
+	r, _ = NewReader(strings.NewReader(in))
 	if _, err := r.Next(); !errors.Is(err, io.ErrUnexpectedEOF) {
 		t.Fatalf("Next = %v, want io.ErrUnexpectedEOF", err)
 	}
