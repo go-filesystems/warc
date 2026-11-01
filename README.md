@@ -117,6 +117,33 @@ not the record that was written.
 | neither | an I/O failure, returned unwrapped |
 | `errors.Is(err, fs.ErrNotExist)` | the filesystem view's missing-path contract |
 | `errors.Is(err, warc.ErrReadOnly)` | every mutating method |
+| `errors.Is(err, warc.ErrTooLarge)` | a header block over `MaxHeaderBytes`, or a block over the ceiling |
+
+## Untrusted input
+
+A WARC file is read as hostile. What a file can make the reader hold, and what
+bounds it:
+
+| What the file controls | Bound |
+|---|---|
+| one record's version line and named fields | `MaxHeaderBytes` = 1 MiB together (net/http's `DefaultMaxHeaderBytes`; ISO 28500 and jwarc state none), read in bounded pieces |
+| a folded field value | linear: the folds are appended to one buffer |
+| a block held by `Next`, `ReadFile`, `Record` | `Reader.MaxBlockSize`, default `DefaultMaxBlockSize` = 1 GiB, refused with `ErrTooLarge` **before** a byte is read |
+| a block seen by `Open` | not read at all: stepped over with a seek, after checking by subtraction that it lies inside the file; `OpenFile` has no ceiling |
+| the entries `Open` keeps | one header per record: a small multiple of the file |
+| error messages | file text is cut to 200 bytes |
+
+Measured before the fix (`TotalAlloc` around the call):
+
+| Input | Allocated |
+|---|---|
+| 50 000 one-byte header folds (200 KB) | 2 655 393 224 bytes (13 000x) |
+| one 256 MiB header line with no newline | 2 424 052 328 bytes |
+| `Open` of a file holding one 64 MiB block | 268 442 712 bytes (the comment said blocks are not read) |
+
+and after: 833 KB, 5.2 MB and 7.6 KB. `FuzzReader` and `FuzzOpen` (the second is
+differential: `Open` against `Next`, record for record) found nothing in the
+first 90 seconds each.
 
 An **unregistered `WARC-Type` is accepted**, not refused: §5.5 tells a reader to
 pass an unknown record type through rather than treat the file as broken.

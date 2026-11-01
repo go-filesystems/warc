@@ -230,8 +230,11 @@ func (r *Record) Date() (time.Time, error) {
 // because refusing a 1.1 date in a file that says WARC/1.0 would reject files
 // every 1.1-era tool writes and buys nothing.
 func parseWARCDate(s string) (time.Time, error) {
-	if !strings.HasSuffix(s, "Z") {
-		return time.Time{}, errorf("WARC-Date %q is not a UTC W3C-DTF timestamp", s)
+	// The longest valid value is 30 octets ("2026-09-26T06:00:00.123456789Z" is 30);
+	// a longer one is refused before time.Parse quotes all of it, up to a
+	// megabyte, into its error.
+	if !strings.HasSuffix(s, "Z") || len(s) > 64 {
+		return time.Time{}, errorf("WARC-Date %q is not a UTC W3C-DTF timestamp", shown(s))
 	}
 	t, err := time.Parse(time.RFC3339, s)
 	if err != nil {
@@ -275,11 +278,12 @@ func isDecimal(s string) bool {
 // package is.
 func parseContentLength(s string) (int64, error) {
 	if !isDecimal(s) {
-		return 0, errorf("Content-Length %q is not a decimal octet count", s)
+		return 0, errorf("Content-Length %q is not a decimal octet count", shown(s))
 	}
 	n, err := strconv.ParseInt(s, 10, 64)
 	if err != nil {
-		return 0, errorf("Content-Length %q: %s", s, err)
+		// isDecimal passed, so the only failure ParseInt has left is the range.
+		return 0, errorf("Content-Length %q: value out of range", shown(s))
 	}
 	return n, nil
 }
